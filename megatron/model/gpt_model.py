@@ -13,6 +13,8 @@ from .language_model import parallel_lm_logits
 import megatron.model.language_model
 from .utils import init_method_normal
 from .utils import scaled_init_method_normal
+from .utils import small_init_method
+from .utils import wang_init_method
 
 
 def post_language_model_processing(lm_output, labels, logit_weights,
@@ -61,14 +63,24 @@ class GPTModel(MegatronModule):
         self.post_process = post_process
         self.fp16_lm_cross_entropy = args.fp16_lm_cross_entropy
 
-        # self.language_model, self._language_model_key = megatron.model.language_model(
+        # xhq modification
+        # determine which init function to use
+        if not args.use_gpt_neox_init_method:
+            init_method = init_method_normal(args.init_method_std)
+        else:
+            init_method = small_init_method(args.hidden_size)
+        if not args.use_gpt_neox_output_layer_init_method:
+            scaled_init_method = scaled_init_method_normal(args.init_method_std, args.num_layers)
+        else:
+            scaled_init_method = wang_init_method(args.num_layers, args.hidden_size)
+
         self.language_model, self._language_model_key = megatron.model.language_model.get_language_model(
             num_tokentypes=num_tokentypes,
             add_pooler=False,
             encoder_attn_mask_type=AttnMaskType.causal,
-            init_method=init_method_normal(args.init_method_std),
-            scaled_init_method=scaled_init_method_normal(args.init_method_std,
-                                                         args.num_layers),
+            # xhq modification
+            init_method=init_method,
+            scaled_init_method=scaled_init_method,
             pre_process=self.pre_process,
             post_process=self.post_process,
             args=args,

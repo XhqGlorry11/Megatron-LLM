@@ -529,7 +529,7 @@ def _add_logging_args(parser):
                        help='Enable logging to Weights & Biases instead of tensorboard.')
     group.add_argument('--wandb_project', type=str, default=None,
                        help='Project name for Weights & Biases.')
-    group.add_argument('--wandb_entity', type=str, default="meditron",
+    group.add_argument('--wandb_entity', type=str, default=None,
                        help='Entity/team name for Weights & Biases.')
     group.add_argument('--wandb_id',type=str,default=None,
                        help="Unique ID to identify this run, alternatively can set `WANDB_RUN_ID`.")
@@ -701,8 +701,16 @@ def _add_initialization_args(parser):
     group.add_argument('--init_method_std', type=float, default=0.02,
                        help='Standard deviation of the zero mean normal '
                        'distribution used for weight initialization.')
+    # xhq modification
+    group.add_argument('--use_gpt_neox_init_method', action='store_true',
+                       help='Use gpt-neox init method, also called small init '
+                       'refer to paper for details.')
     group.add_argument('--init_method_xavier_uniform', action='store_true',
                        help='Enable Xavier uniform parameter initialization')
+    # xhq modification
+    group.add_argument('--use_gpt_neox_output_layer_init_method', action='store_true',
+                       help='Use gpt-neox output layer initmethod, also called Wang init '
+                       'refer to paper for details.')
     return parser
 
 
@@ -943,7 +951,9 @@ def _add_data_args(parser):
                                 'BertWordPieceCase',
                                 'GPT2BPETokenizer',
                                 'SentencePieceTokenizer',
-                                'FalconTokenizer'],
+                                'FalconTokenizer',
+                                'HFTokenizer'
+                                ],
                        help='What type of tokenizer to use.')
     group.add_argument('--tokenizer_model', type=str, default=None,
                        help='Sentencepiece tokenizer model.')

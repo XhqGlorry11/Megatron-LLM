@@ -17,7 +17,7 @@ from megatron.model import ModelType
 import megatron.model
 from megatron.training import pretrain
 from megatron.utils import average_losses_across_data_parallel_group
-
+import megatron.initialize
 
 """
 Pipeline parallelism for T5

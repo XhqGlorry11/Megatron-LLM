@@ -445,7 +445,8 @@ class TransformerLanguageModel(MegatronModule):
                                device=None if args.use_cpu_initialization else torch.cuda.current_device())
             self.lm_head = nn.Parameter(data)
             self._lm_key = "lm_head"
-            init_method = nn.init.xavier_uniform_ if args.init_method_xavier_uniform else nn.init.xavier_normal_
+            # xhq modification
+            init_method = init_method
             # init weights
             if args.perform_initialization:
                 if args.use_cpu_initialization:

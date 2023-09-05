@@ -263,6 +263,7 @@ def get_model(model_provider_func: Callable,
         for param in model_module.parameters():
             tensor_parallel.set_defaults_if_not_set_tensor_model_parallel_attributes(param)
 
+
     # Print number of parameters.
     if mpu.get_data_parallel_rank() == 0:
         print(' > number of parameters on (tensor, pipeline) '

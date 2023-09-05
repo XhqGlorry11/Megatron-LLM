@@ -14,6 +14,16 @@ def init_method_normal(sigma):
         return torch.nn.init.normal_(tensor, mean=0.0, std=sigma)
     return init_
 
+# xhq modification
+def small_init_method(dim):
+    """Fills the input Tensor with values according to the method described in Transformers without Tears: Improving
+    the Normalization of Self-Attention - Nguyen, T. & Salazar, J. (2010), using a normal distribution."""
+    std = math.sqrt(2 / (5 * dim))
+
+    def init_(tensor):
+        return torch.nn.init.normal_(tensor, mean=0.0, std=std)
+
+    return init_
 
 def scaled_init_method_normal(sigma, num_layers):
     """Init method based on N(0, sigma/sqrt(2*num_layers)."""
@@ -21,6 +31,15 @@ def scaled_init_method_normal(sigma, num_layers):
 
     def init_(tensor):
         return torch.nn.init.normal_(tensor, mean=0.0, std=std)
+    return init_
+
+# xhq modification
+def wang_init_method(n_layers, dim):
+    std = 2 / n_layers / math.sqrt(dim)
+
+    def init_(tensor):
+        return torch.nn.init.normal_(tensor, mean=0.0, std=std)
+
     return init_
 
 

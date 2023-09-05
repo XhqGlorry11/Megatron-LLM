@@ -1,0 +1,72 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Python: Current File",
+            "type": "python",
+            "request": "launch",
+            "console": "integratedTerminal",
+            "justMyCode": false,
+            "cwd": "${workspaceFolder}/megatron-llm",
+            "module": "torch.distributed.launch",
+            "args": [
+                "--nproc_per_node=1",
+                "--master_port=58417",
+                "--use_env",
+                "/home/xinghq/megatron-llm/finetune.py",
+                "--tensor_model_parallel_size", "1",
+                "--pipeline_model_parallel_size", "1",
+                "--save", "/hstore/llm_train_val/megatron-llm/fintune_llama/checkpoints",
+                "--load", "/hstore/llm_train_val/megatron-llm/fintune_llama/checkpoints",
+                "--data_path", "/hstore/llm_data/The_Pile/train/tokenization/train_data_text_document",
+                "--model_name", "llama2",
+                "--tokenizer_type", "HFTokenizer",
+                "--vocab_file", "/home/xinghq/megatron-llm/tokenizer/neox_20B_tokenizer.json",
+                "--bf16",
+                "--use_flash_attn",
+                "--micro_batch_size", "4",
+                "--global_batch_size", "16",
+                "--sequence_parallel",
+                "--recompute_granularity", "selective",
+                "--use_checkpoint_args",
+                
+                
+                "--log_interval", "1",
+                "--save_interval", "100",
+                "--eval_interval", "10",
+                "--train_iters", "1000",
+                "--lr_decay_style", "cosine",
+                "--lr_warmup_iters", "50",
+                "--lr", "0.0003",
+                "--min_lr", "0.00003",
+                
+                
+                
+                
+                "--no_new_tokens",
+                // model configs
+                "--num_layers", "24", // 24
+                "--hidden_size", "2048", // 2048
+                "--num_attention_heads", "16", // 16
+                "--seq_length", "4096",
+                "--max_position_embeddings", "4096",
+                // llama2 model needed configs
+                "--position_embedding_type", "rotary",
+                "--glu_activation", "swiglu",
+                "--use_rms_norm",
+                "--layernorm_epsilon", "1e-5",
+                "--no_tie_embed_logits",
+                "--no_bias_gelu_fusion",
+                "--no_bias_dropout_fusion",
+                "--hidden_dropout", "0.0",
+                "--attention_dropout", "0.0",
+
+
+
+            ],
+            "env":{
+                "CUDA_VISIBLE_DEVICES": "0"
+            }
+        }
+    ]
+}

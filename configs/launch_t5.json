@@ -1,0 +1,57 @@
+{
+    // Use IntelliSense to learn about possible attributes.
+    // Hover to view descriptions of existing attributes.
+    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Python: Current File",
+            "type": "python",
+            "request": "launch",
+            "console": "integratedTerminal",
+            "justMyCode": false,
+            "cwd": "${workspaceFolder}/megatron-llm",
+            // torch.distributed.launch debug
+            "module": "torch.distributed.launch",
+            "args": [
+                "--nproc_per_node=1",
+                "--master_port=58417",
+                "--use_env",
+                "/home/xinghq/megatron-llm/pretrain_t5.py",
+                "--num_layers", "12",
+                "--hidden_size", "768",
+                "--num_attention_heads", "12",
+                "--ffn_hidden_size", "3072",
+                "--encoder_seq_length", "512",
+                "--decoder_seq_length", "128",
+                "--micro_batch_size", "8",
+                "--global_batch_size", "64",
+                "--max_position_embeddings", "512",
+                "--train_iters", "500000",
+                "--lr_decay_iters", "320000",
+                "--save", "/hstore/llm_train_val/megatron-llm/t5/checkpoints",
+                "--load", "/hstore/llm_train_val/megatron-llm/t5/checkpoints",
+                "--data_path", "/hstore/llm_data/The_Pile/train/tokenization/train_data_text_document",
+                "--vocab_file", "/home/xinghq/megatron-llm/tokenizer/neox_20B_tokenizer.json",
+                "--data_impl", "mmap",
+                "--split", "949, 50, 1",
+                "--distributed_backend", "nccl",
+                "--lr", "0.0003",
+                "--lr_decay_style", "cosine",
+                "--min_lr", "0.00003",
+                "--weight_decay", "0.01",
+                "--clip_grad", "1.0",
+                "--lr_warmup_fraction", "0.01",
+                "--log_interval", "100",
+                "--save_interval", "10000",
+                "--eval_interval", "1000",
+                "--eval_iters", "10",
+                "--fp16"
+
+            ],
+            "env":{
+                "CUDA_VISIBLE_DEVICES": "0"
+            }
+        }
+    ]
+}
