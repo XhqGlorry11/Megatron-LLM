@@ -1,12 +1,22 @@
 #！ /usr/bin/bash
 
-CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 /usr/bin/python -m torch.distributed.launch \
---nproc_per_node=8 \
---master_port=58417 \
---use_env \
+export NCCL_DEBUG=INFO
+export NCCL_SOCKET_IFNAME=eth0
+export NCCL_IB_GID_INDEX=3
+export NCCL_IB_DISABLE=0
+export NCCL_IB_HCA=mlx5_bond
+export NCCL_NET_GDR_LEVEL=2
+export NCCL_IB_QPS_PER_CONNECTION=8
+export NCCL_IB_TC=160
+export NCCL_IB_TIMEOUT=22
+export NCCL_PXN_DISABLE=0
+
+
+# CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 /usr/bin/python -m torch.distributed.launch --nproc_per_node=8 --master_port=58417 --use_env \
+torchrun --nproc_per_node 8 --nnodes 3 --node_rank 0 --master_addr 172.17.0.6 --master_port 8088 \
 /home/xinghq/megatron-llm/finetune.py \
---tensor_model_parallel_size=4 \
---pipeline_model_parallel_size=2 \
+--tensor_model_parallel_size=1 \
+--pipeline_model_parallel_size=1 \
 --save=/hstore/llm_train_val/megatron-llm/fintune_llama/checkpoints \
 --load=/hstore/llm_train_val/megatron-llm/fintune_llama/checkpoints \
 --train_data_path=/hstore/llm_data/The_Pile/train/tokenization/train_data_text_document \
@@ -15,10 +25,11 @@ CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 /usr/bin/python -m torch.distributed.launch
 --model_name=llama2 \
 --tokenizer_type=HFTokenizer \
 --vocab_file=/home/xinghq/megatron-llm/tokenizer/neox_20B_tokenizer.json \
---fp16 \
+--bf16 \
+--accumulate_allreduce_grads_in_fp32 \
 --use_flash_attn \
 --micro_batch_size=3 \
---global_batch_size=192 \
+--global_batch_size=576 \
 --sequence_parallel \
 --recompute_granularity=selective \
 --use_checkpoint_args \
@@ -29,6 +40,8 @@ CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 /usr/bin/python -m torch.distributed.launch
 --lr=0.0003 \
 --min_lr=0.00003 \
 --no_new_tokens \
+--use_gpt_neox_init_method \
+--use_gpt_neox_output_layer_init_method \
 --num_layers=24 \
 --hidden_size=2048 \
 --num_attention_heads=16 \
@@ -46,12 +59,12 @@ CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 /usr/bin/python -m torch.distributed.launch
 --hidden_dropout=0.0 \
 --attention_dropout=0.0 \
 --log_interval=1 \
---save_interval=10000 \
---eval_interval=1000 \
+--save_interval=2000 \
+--eval_interval=100 \
 --log_params_norm \
 --log_num_zeros_in_grad \
 --wandb_logger \
---wandb_project=llama-megatron \
---wandb_id=3 \
+--wandb_project=llama-megatron-3nodes \
+--wandb_id=6 \
 --wandb_api_key=fac46169cec8e164a47ed1c71199e3e8e9f02cc5 \
-2>&1 |tee debug.txt
+2>&1 |tee /home/xinghq/megatron-llm/logs/3nodes.txt
