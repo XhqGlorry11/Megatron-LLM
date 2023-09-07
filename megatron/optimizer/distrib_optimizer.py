@@ -381,9 +381,18 @@ class DistributedOptimizer(MixedPrecisionOptimizer):
         for model_index, model in enumerate(self.models):
             current_param_buffers = {}
             for dtype, grad_buffer in model._grad_buffers.items():
-                param_buffer = torch.tensor(grad_buffer.data.storage()._untyped(),
-                                            dtype = params_dtype,
-                                            device = grad_buffer.data.device)
+
+                # Handle older/newer method for getting untyped storage.
+                try:
+                    storage = grad_buffer.data.storage()._untyped()
+                except:
+                    storage = grad_buffer.data.storage().untyped()
+
+                # Typed param buffer.
+                param_buffer = torch.tensor(
+                    storage,
+                    dtype = params_dtype,
+                    device = grad_buffer.data.device)
                 param_buffer = param_buffer[:grad_buffer.numel_padded]
                 current_param_buffers[dtype] = param_buffer
             self.param_buffers.append(current_param_buffers)
