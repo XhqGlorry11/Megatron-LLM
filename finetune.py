@@ -117,7 +117,6 @@ def train_valid_test_datasets_provider(train_val_test_num_samples):
         train_valid_test_num_samples=train_val_test_num_samples,
         seq_length=args.seq_length,
         seed=args.seed,
-        local_rank=args.local_rank,
         skip_warmup=(not args.mmap_warmup),
         train_data_prefix=args.train_data_path,
         valid_data_prefix=args.valid_data_path,

@@ -23,7 +23,6 @@ def build_train_valid_test_datasets(data_prefix: Optional[str],
                                     train_valid_test_num_samples: List[int],
                                     seq_length: int,
                                     seed: int,
-                                    local_rank: int,
                                     skip_warmup: bool,
                                     train_data_prefix=None,
                                     valid_data_prefix=None,
@@ -82,17 +81,17 @@ def build_train_valid_test_datasets(data_prefix: Optional[str],
         if train_data_prefix is not None:
             train_dataset = _build_dataset("train", train_data_prefix, data_impl,
                                         train_valid_test_num_samples[0], seq_length, seed,
-                                        skip_warmup, local_rank)
+                                        skip_warmup)
 
         if valid_data_prefix is not None:
             valid_dataset = _build_dataset("valid", valid_data_prefix, data_impl,
                                     train_valid_test_num_samples[1], seq_length, seed,
-                                    False, local_rank)
+                                    False)
 
         if test_data_prefix is not None:
             test_dataset = _build_dataset("test", test_data_prefix, data_impl,
                                     train_valid_test_num_samples[2], seq_length, seed,
-                                    False, local_rank)
+                                    False)
         return train_dataset, valid_dataset, test_dataset
 
 
@@ -102,17 +101,14 @@ def _build_dataset(dataset_name,
                    num_samples,
                    seq_length,
                    seed,
-                   skip_warmup,
-                   local_rank):
+                   skip_warmup):
     dataset = None
     if len(data_prefix) == 1:
         dataset = _build_dataset_kernel(dataset_name,
                         data_prefix[0], data_impl,
                         num_samples, seq_length,
-                        seed, skip_warmup, local_rank)
+                        seed, skip_warmup)
     else:
-        print ('Not supported, Solve local rank settings to generate npy files.')
-        raise ValueError
         # Blending dataset.
         # Parse the values.
         output = get_datasets_weights_and_num_samples(data_prefix, num_samples)
@@ -133,7 +129,7 @@ def _build_dataset(dataset_name,
 
 
 def _build_dataset_kernel(dataset_name, data_prefix, data_impl,
-                num_samples, seq_length, seed, skip_warmup, local_rank):
+                num_samples, seq_length, seed, skip_warmup):
     """
     Build dataset. This method is called when individual
     train, valid, test datasets are provided
@@ -155,7 +151,7 @@ def _build_dataset_kernel(dataset_name, data_prefix, data_impl,
 
     dataset = GPTDataset(dataset_name, data_prefix,
                         documents, indexed_dataset,
-                        num_samples, seq_length, seed, local_rank)
+                        num_samples, seq_length, seed)
 
     return dataset
 
@@ -225,7 +221,7 @@ def get_indexed_dataset_(data_prefix, data_impl, skip_warmup):
 class GPTDataset(torch.utils.data.Dataset):
 
     def __init__(self, name, data_prefix, documents, indexed_dataset,
-                 num_samples, seq_length, seed, local_rank):
+                 num_samples, seq_length, seed):
 
         self.name = name
         self.indexed_dataset = indexed_dataset
@@ -237,7 +233,7 @@ class GPTDataset(torch.utils.data.Dataset):
         # Build index mappings.
         self.doc_idx, self.sample_idx, self.shuffle_idx = _build_index_mappings(
             self.name, data_prefix, documents, self.indexed_dataset.sizes,
-            num_samples, seq_length, seed, local_rank)
+            num_samples, seq_length, seed)
 
     def __len__(self):
         # -1 is due to data structure used to retieve the index:
@@ -274,7 +270,7 @@ class GPTDataset(torch.utils.data.Dataset):
 
 
 def _build_index_mappings(name, data_prefix, documents, sizes,
-                          num_samples, seq_length, seed, local_rank):
+                          num_samples, seq_length, seed):
     """Build doc-idx, sample-idx, and shuffle-idx.
     doc-idx: is an array (ordered) of documents to be used in training.
     sample-idx: is the start document index and document offset for each
@@ -298,14 +294,13 @@ def _build_index_mappings(name, data_prefix, documents, sizes,
     shuffle_idx_filename = _filename + '_shuffle_idx.npy'
 
     # Build the indexed mapping if not exist.
-    # Enable npy generation on every node.
-    if local_rank == 0:
+    if torch.distributed.get_rank() == 0 or os.environ.get('LOCAL_RANK', None) == '0':
         if (not os.path.isfile(doc_idx_filename)) or \
            (not os.path.isfile(sample_idx_filename)) or \
            (not os.path.isfile(shuffle_idx_filename)):
 
             print(' > WARNING: could not find index map files, building '
-                         'the indices on local rank 0 ...')
+                         'the indices on rank 0 ...')
 
             # For the last epoch, decide whether include the entire epoch
             # in the global shuffle or not.
