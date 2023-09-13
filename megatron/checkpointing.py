@@ -202,6 +202,7 @@ def read_metadata(tracker_filename):
         # If not, print a warning and chose the maximum
         # iteration across all ranks.
         if iteration != max_iter:
+            rank = torch.distributed.get_rank()
             print('WARNING: on rank {} found iteration {} in the '
                   'metadata while max iteration across the ranks '
                   'is {}, replacing it with max iteration.'.format(

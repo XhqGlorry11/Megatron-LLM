@@ -39,6 +39,8 @@ def build_tokenizer(args):
         tokenizer = _FalconTokenizer(vocab_extra_ids_list=args.vocab_extra_ids_list, new_tokens=args.new_tokens)
     elif args.tokenizer_type == 'HFTokenizer':
         tokenizer = _HFTokenizer(args.vocab_file)
+    elif args.tokenizer_type == 'TsTokenizer':
+        tokenizer = _TsTokenizer(args.vocab_file)
     else:
         raise NotImplementedError('{} tokenizer is not '
                                   'implemented.'.format(args.tokenizer_type))
@@ -535,3 +537,68 @@ class _HFTokenizer(AbstractTokenizer):
     @property
     def eod(self):
         return self.eod_id
+    
+from transformers import AutoTokenizer, GPT2Tokenizer, GPT2TokenizerFast, PreTrainedTokenizerFast, LlamaTokenizer
+import os
+class _TsTokenizer(AbstractTokenizer):
+  """Designed to Integrate the pretrained OpenAI GPT2 Tokenizers from HF"""
+
+  def __init__(self, vocab_file, fast=True):
+    name = "TsTokenizer"
+    if fast:
+      name += "Fast"
+    super().__init__(name)
+    # if vocab_file is None:
+    #     vocab_file = "gpt2"
+    print('init ts tokenizer', vocab_file)
+    if vocab_file.endswith('.json'):
+      self.tokenizer: PreTrainedTokenizerFast = PreTrainedTokenizerFast.from_pretrained(vocab_file)
+    else:
+      if 'tokenizer.json' in os.listdir(vocab_file):
+        self.tokenizer: PreTrainedTokenizerFast = AutoTokenizer.from_pretrained(vocab_file)
+      else:
+        self.tokenizer: PreTrainedTokenizerFast = LlamaTokenizer.from_pretrained(vocab_file)
+    # self.tokenizer.clean_up_tokenization_spaces = False
+    # print('init over')
+
+    # self.tokenizer.add_special_tokens({"pad_token": "<|padding|>"})
+    self.eod_id = self.tokenizer.eos_token_id
+    self.pad_id = self.tokenizer.pad_token_id if self.tokenizer.pad_token_id is not None else self.tokenizer.eos_token_id
+    # print('eod', self.eod_id)
+    # print('pad', self.pad_id)
+    # test_string = '白日依山尽。这是美景。This is good. 今夜は月がきれいですね.인생의 위대한 목표는 지식이 아니라 행동이다.'
+    # print(f'Tokenizer init complete.\n{test_string}\n{self.tokenizer.tokenize(test_string)}\n{self.tokenizer.encode(test_string)}', flush=True)
+
+  @property
+  def vocab_size(self):
+    return len(self.tokenizer)
+
+  @property
+  def vocab(self):
+    return self.tokenizer.get_vocab()
+
+  @property
+  def inv_vocab(self):
+    return self.tokenizer._tokenizer.decoder
+
+  def tokenize(self, text: str):
+    return self.tokenizer.encode(text, add_special_tokens=False)
+
+  def tokenize_batch(self, text_batch: Union[List[str], str]):
+    if isinstance(text_batch, str):
+      text_batch = [text_batch]
+    return [self.tokenize(t) for t in text_batch]
+
+  def detokenize(self, token_ids):
+    return self.tokenizer.decode(token_ids)
+
+  @property
+  def eod(self):
+    return self.eod_id
+  
+if __name__ == '__main__':
+    tokenizer = _TsTokenizer(vocab_file='/home/xinghq/megatron-llm/tokenizer/llama2-merged')
+    token = tokenizer.tokenize('我爱学习。')
+    for t in token:
+       print (tokenizer.detokenize(t))
+    string = tokenizer.detokenize(token)

@@ -952,7 +952,8 @@ def _add_data_args(parser):
                                 'GPT2BPETokenizer',
                                 'SentencePieceTokenizer',
                                 'FalconTokenizer',
-                                'HFTokenizer'
+                                'HFTokenizer',
+                                'TsTokenizer'
                                 ],
                        help='What type of tokenizer to use.')
     group.add_argument('--tokenizer_model', type=str, default=None,
