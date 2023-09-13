@@ -95,11 +95,13 @@ class WandbTBShim(object):
     def __init__(self, config:WandBConfig):
         super().__init__()
         self.cfg=config
-        if os.environ.get("WANDB_API_KEY") is None:
+        if os.environ.get("WANDB_API_KEY") is None and not os.environ.get("SM_TRAINING_ENV"):
             if self.cfg.api_key is None:
                 raise ValueError("WANDB_API_KEY is not set, nor passed as an argument")
             else:
                 os.environ["WANDB_API_KEY"]=self.cfg.api_key
+        print('start wandb init')
+        wandb.sagemaker_auth()
         wandb.init(config=config.config,
                    entity=config.entity,
                    project=config.project,
@@ -123,6 +125,7 @@ class WandbTBShim(object):
                 print('WARNING: TensorBoard writing requested but is not '
                       'available (are you using PyTorch 1.1.0 or later?), '
                       'no TensorBoard logs will be written.', flush=True)
+                self.tb_writer = None
         else:
             self.tb_writer=None
 
