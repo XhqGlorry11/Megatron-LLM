@@ -538,6 +538,6 @@ def _build_shuffle_idx(num_samples_per_epoch, total_size, np_rng):
                                          step=1, dtype=dtype_)
     np_rng.shuffle(shuffle_idx_in_one_epoch)
     
-    shuffle_idx_beyond_one_epoch = np.array([-1] * (total_size - num_samples_per_epoch))
+    shuffle_idx_beyond_one_epoch = np.array([-1] * (total_size - num_samples_per_epoch), dtype=dtype_)
     shuffle_idx = np.concatenate((shuffle_idx_in_one_epoch, shuffle_idx_beyond_one_epoch))
     return shuffle_idx
