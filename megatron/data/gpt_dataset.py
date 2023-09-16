@@ -39,6 +39,8 @@ def build_train_valid_test_datasets(data_prefix: Optional[str],
                                                     seq_length,
                                                     seed,
                                                     skip_warmup)
+        print ('logic modified by xhq, multiple data_pathes not supported currently.')
+        raise ValueError
         # Blending dataset.
         # Parse the values.
         output = get_datasets_weights_and_num_samples(data_prefix,
@@ -185,20 +187,23 @@ def _build_train_valid_test_datasets(data_prefix,
     print_split_stats('validation', 1)
     print_split_stats('test', 2)
 
-    def _f(index, name):
+    def _f(index, name, documents_total):
         dataset = None
         if splits[index + 1] > splits[index]:
-            documents = np.arange(start=splits[index], stop=splits[index + 1],
-                                  step=1, dtype=np.int32)
+            documents = documents_total[splits[index]: splits[index + 1]]
             dataset = GPTDataset(name, data_prefix,
                                   documents, indexed_dataset,
                                   train_valid_test_num_samples[index],
                                   seq_length, seed)
         return dataset
 
-    train_dataset = _f(0, 'train')
-    valid_dataset = _f(1, 'valid')
-    test_dataset = _f(2, 'test')
+    # shuffle documents index in advance to avoid continuos train/valid/test dataset within a whole bin data file.
+    documents_total = np.arange(start=0, stop=splits[-1], step=1, dtype=np.int64)
+    np.random.shuffle(documents_total)
+
+    train_dataset = _f(0, 'train', documents_total)
+    valid_dataset = _f(1, 'valid', documents_total)
+    test_dataset = _f(2, 'test', documents_total)
 
     return train_dataset, valid_dataset, test_dataset
 
