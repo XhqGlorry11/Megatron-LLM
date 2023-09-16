@@ -342,8 +342,13 @@ def _build_index_mappings(name, data_prefix, documents, sizes,
 
             # doc-idx.
             start_time = time.time()
-            doc_idx = _build_doc_idx(documents, num_epochs, np_rng,
-                                     separate_last_epoch)
+            if 'train' in doc_idx_filename:
+                doc_idx = _build_doc_idx_train(documents, num_epochs, np_rng,
+                                               separate_last_epoch)
+            else:
+                assert 'valid' in doc_idx_filename or 'test' in doc_idx_filename
+                doc_idx = _build_doc_idx_val_test(documents, num_epochs, np_rng,
+                                                  separate_last_epoch)
             np.save(doc_idx_filename, doc_idx, allow_pickle=True)
             print(' > elasped time to build and save doc-idx mapping '
                          '(seconds): {:4f}'.format(time.time() - start_time))
@@ -365,14 +370,18 @@ def _build_index_mappings(name, data_prefix, documents, sizes,
             start_time = time.time()
             # -1 is due to data structure used to retieve the index:
             #    sample i --> [sample_idx[i], sample_idx[i+1])
-            # if separate_last_epoch:
-            #     num_samples_ = num_samples_from_epochs_minus_one
-            # else:
-            #     num_samples_ = sample_idx.shape[0] - 1
-            # shuffle_idx = _build_shuffle_idx(num_samples_,
-            #                                  sample_idx.shape[0] - 1, np_rng)
-            num_samples_per_epoch = (tokens_per_epoch - 1) // seq_length
-            shuffle_idx = _build_shuffle_idx(num_samples_per_epoch, sample_idx.shape[0] - 1, np_rng)
+            if 'train' in shuffle_idx_filename:
+                num_samples_per_epoch = (tokens_per_epoch - 1) // seq_length
+                shuffle_idx = _build_shuffle_idx_train(num_samples_per_epoch, sample_idx.shape[0] - 1, np_rng)
+            else:
+                assert 'valid' in doc_idx_filename or 'test' in doc_idx_filename
+                if separate_last_epoch:
+                    num_samples_ = num_samples_from_epochs_minus_one
+                else:
+                    num_samples_ = sample_idx.shape[0] - 1
+                shuffle_idx = _build_shuffle_idx_val_test(num_samples_,
+                                                          sample_idx.shape[0] - 1, np_rng)
+            
             np.save(shuffle_idx_filename, shuffle_idx, allow_pickle=True)
             print(' > elasped time to build and save shuffle-idx mapping'
                          ' (seconds): {:4f}'.format(time.time() - start_time))
@@ -428,7 +437,7 @@ def _num_epochs(tokens_per_epoch, seq_length, num_samples):
             return num_epochs
 
 
-def _build_doc_idx(documents, num_epochs, np_rng, separate_last_epoch):
+def _build_doc_idx_val_test(documents, num_epochs, np_rng, separate_last_epoch):
     """Build an array with length = number-of-epochs * number-of-dcuments.
     Each index is mapped to a corresponding document."""
     if not separate_last_epoch or num_epochs == 1:
@@ -439,19 +448,31 @@ def _build_doc_idx(documents, num_epochs, np_rng, separate_last_epoch):
         np_rng.shuffle(doc_idx)
         return doc_idx
 
-    # doc_idx_first = _build_doc_idx(documents, num_epochs-1, np_rng, False)
-    # doc_idx_last = _build_doc_idx(documents, 1, np_rng, False)
-    # return np.concatenate((doc_idx_first, doc_idx_last))
+    doc_idx_first = _build_doc_idx_val_test(documents, num_epochs-1, np_rng, False)
+    doc_idx_last = _build_doc_idx_val_test(documents, 1, np_rng, False)
+    return np.concatenate((doc_idx_first, doc_idx_last))
 
-    # modify doc index generation logic to disable epoch > 1. Make total doc index：
+
+def _build_doc_idx_train(documents, num_epochs, np_rng, separate_last_epoch):
+    """Build an array with length = number-of-epochs * number-of-dcuments.
+    Each index is mapped to a corresponding document."""
+    if not separate_last_epoch or num_epochs == 1:
+        doc_idx = np.mgrid[0:num_epochs, 0:len(documents)][1]
+        doc_idx[:] = documents
+        doc_idx = doc_idx.reshape(-1)
+        doc_idx = doc_idx.astype(np.int32)
+        np_rng.shuffle(doc_idx)
+        return doc_idx
+
+
+    # modify doc index generation logic to disable epoch > 1 during training. Make total doc index：
     # shuffle([index in one epoch] * num_epoch) -> shuffle([index in one epoch]) * num_epoch
     doc_holders = []
     for _ in range(num_epochs):
-        cur_doc_idx = _build_doc_idx(documents, 1, np_rng, False)
+        cur_doc_idx = _build_doc_idx_train(documents, 1, np_rng, False)
         doc_holders.append(cur_doc_idx)
     doc_idx_total = np.concatenate(doc_holders)
     return doc_idx_total
-
 
 
 def _build_sample_idx(sizes, doc_idx, seq_length,
@@ -503,36 +524,36 @@ def _build_sample_idx(sizes, doc_idx, seq_length,
     return sample_idx
 
 
-# def _build_shuffle_idx(num_samples, total_size, np_rng):
-#     """Build the range [0, size) and shuffle."""
-#     print(' > building shuffle index with split [0, {}) and [{}, {}) '
-#           '...'.format(num_samples, num_samples, total_size), flush=True)
+def _build_shuffle_idx_val_test(num_samples, total_size, np_rng):
+    """Build the range [0, size) and shuffle."""
+    print(' > building shuffle index with split [0, {}) and [{}, {}) '
+          '...'.format(num_samples, num_samples, total_size), flush=True)
     
-#     dtype_ = np.uint32
-#     if total_size >= (np.iinfo(np.uint32).max - 1):
-#         dtype_ = np.int64
+    dtype_ = np.uint32
+    if total_size >= (np.iinfo(np.uint32).max - 1):
+        dtype_ = np.int64
 
-#     shuffle_idx_first = np.arange(start=0, stop=num_samples,
-#                                   step=1, dtype=dtype_)
-#     np_rng.shuffle(shuffle_idx_first)
-#     if num_samples == total_size:
-#         return shuffle_idx_first
+    shuffle_idx_first = np.arange(start=0, stop=num_samples,
+                                  step=1, dtype=dtype_)
+    np_rng.shuffle(shuffle_idx_first)
+    if num_samples == total_size:
+        return shuffle_idx_first
 
-#     shuffle_idx_last = np.arange(start=num_samples, stop=total_size,
-#                                  step=1, dtype=dtype_)
-#     np_rng.shuffle(shuffle_idx_last)
+    shuffle_idx_last = np.arange(start=num_samples, stop=total_size,
+                                 step=1, dtype=dtype_)
+    np_rng.shuffle(shuffle_idx_last)
 
-#     return np.concatenate((shuffle_idx_first, shuffle_idx_last))
+    return np.concatenate((shuffle_idx_first, shuffle_idx_last))
 
 # modify shuffle index generation logic by xhq11 to disable epoch > 1
 # make shuffle index = [shuffle index with 1 epoch] + [-1] * remaining length
-def _build_shuffle_idx(num_samples_per_epoch, total_size, np_rng):
+def _build_shuffle_idx_train(num_samples_per_epoch, total_size, np_rng):
 
-    print(' > building shuffle index with split [0, {}) with normal index and [{}, {}) with -1 index to disable epoch > 1'
+    print(' > building shuffle index with split [0, {}) with normal index and [{}, {}) with -1 index to disable epoch > 1 during training'
           '...'.format(num_samples_per_epoch, num_samples_per_epoch, total_size), flush=True)
 
-    dtype_ = np.uint32
-    if total_size >= (np.iinfo(np.uint32).max - 1):
+    dtype_ = np.int32
+    if total_size >= (np.iinfo(np.int32).max - 1):
         dtype_ = np.int64
     shuffle_idx_in_one_epoch = np.arange(start=0, stop=num_samples_per_epoch,
                                          step=1, dtype=dtype_)
