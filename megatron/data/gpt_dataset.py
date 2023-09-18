@@ -26,7 +26,9 @@ def build_train_valid_test_datasets(data_prefix: Optional[str],
                                     skip_warmup: bool,
                                     train_data_prefix=None,
                                     valid_data_prefix=None,
-                                    test_data_prefix=None):
+                                    test_data_prefix=None,
+                                    global_batch_size=0,
+                                    iteration=0):
     """Build train, valid, and test datasets."""
     if data_prefix:
         print_rank_0("Single data path provided for train, valid & test")
@@ -38,7 +40,9 @@ def build_train_valid_test_datasets(data_prefix: Optional[str],
                                                     train_valid_test_num_samples,
                                                     seq_length,
                                                     seed,
-                                                    skip_warmup)
+                                                    skip_warmup,
+                                                    global_batch_size,
+                                                    iteration)
         print ('logic modified by xhq, multiple data_pathes not supported currently.')
         raise ValueError
         # Blending dataset.
@@ -164,7 +168,9 @@ def _build_train_valid_test_datasets(data_prefix,
                                      train_valid_test_num_samples,
                                      seq_length,
                                      seed,
-                                     skip_warmup):
+                                     skip_warmup,
+                                     global_batch_size,
+                                     iteration):
     """Build train, valid, and test datasets."""
 
     # Indexed dataset.
@@ -187,23 +193,23 @@ def _build_train_valid_test_datasets(data_prefix,
     print_split_stats('validation', 1)
     print_split_stats('test', 2)
 
-    def _f(index, name, documents_total):
+    def _f(index, name, documents_total, global_batch_size, iteration):
         dataset = None
         if splits[index + 1] > splits[index]:
             documents = documents_total[splits[index]: splits[index + 1]]
             dataset = GPTDataset(name, data_prefix,
                                   documents, indexed_dataset,
                                   train_valid_test_num_samples[index],
-                                  seq_length, seed)
+                                  seq_length, seed, global_batch_size, iteration)
         return dataset
 
     # shuffle documents index in advance to avoid continuos train/valid/test dataset within a whole bin data file.
     documents_total = np.arange(start=0, stop=splits[-1], step=1, dtype=np.int64)
     np.random.shuffle(documents_total)
 
-    train_dataset = _f(0, 'train', documents_total)
-    valid_dataset = _f(1, 'valid', documents_total)
-    test_dataset = _f(2, 'test', documents_total)
+    train_dataset = _f(0, 'train', documents_total, global_batch_size, iteration)
+    valid_dataset = _f(1, 'valid', documents_total, global_batch_size, iteration)
+    test_dataset = _f(2, 'test', documents_total, global_batch_size, iteration)
 
     return train_dataset, valid_dataset, test_dataset
 
@@ -226,7 +232,7 @@ def get_indexed_dataset_(data_prefix, data_impl, skip_warmup):
 class GPTDataset(torch.utils.data.Dataset):
 
     def __init__(self, name, data_prefix, documents, indexed_dataset,
-                 num_samples, seq_length, seed):
+                 num_samples, seq_length, seed, global_batch_size, iteration):
 
         self.name = name
         self.indexed_dataset = indexed_dataset
@@ -238,7 +244,7 @@ class GPTDataset(torch.utils.data.Dataset):
         # Build index mappings.
         self.doc_idx, self.sample_idx, self.shuffle_idx = _build_index_mappings(
             self.name, data_prefix, documents, self.indexed_dataset.sizes,
-            num_samples, seq_length, seed)
+            num_samples, seq_length, seed, global_batch_size, iteration)
 
     def __len__(self):
         # -1 is due to data structure used to retieve the index:
@@ -275,7 +281,7 @@ class GPTDataset(torch.utils.data.Dataset):
 
 
 def _build_index_mappings(name, data_prefix, documents, sizes,
-                          num_samples, seq_length, seed):
+                          num_samples, seq_length, seed, global_batch_size, iteration):
     """Build doc-idx, sample-idx, and shuffle-idx.
     doc-idx: is an array (ordered) of documents to be used in training.
     sample-idx: is the start document index and document offset for each
@@ -377,7 +383,7 @@ def _build_index_mappings(name, data_prefix, documents, sizes,
             #    sample i --> [sample_idx[i], sample_idx[i+1])
             if 'train' in shuffle_idx_filename:
                 num_samples_per_epoch = (tokens_per_epoch - 1) // seq_length
-                shuffle_idx = _build_shuffle_idx_train(num_samples_per_epoch, sample_idx.shape[0] - 1, np_rng)
+                shuffle_idx = _build_shuffle_idx_train(num_samples_per_epoch, sample_idx.shape[0] - 1, np_rng, global_batch_size, iteration)
             else:
                 assert 'valid' in doc_idx_filename or 'test' in doc_idx_filename
                 if separate_last_epoch:
@@ -385,7 +391,7 @@ def _build_index_mappings(name, data_prefix, documents, sizes,
                 else:
                     num_samples_ = sample_idx.shape[0] - 1
                 shuffle_idx = _build_shuffle_idx_val_test(num_samples_,
-                                                          sample_idx.shape[0] - 1, np_rng)
+                                                          sample_idx.shape[0] - 1, np_rng, global_batch_size, iteration)
             
             np.save(shuffle_idx_filename, shuffle_idx, allow_pickle=True)
             print(' > elasped time to build and save shuffle-idx mapping'
@@ -529,7 +535,7 @@ def _build_sample_idx(sizes, doc_idx, seq_length,
     return sample_idx
 
 
-def _build_shuffle_idx_val_test(num_samples, total_size, np_rng):
+def _build_shuffle_idx_val_test(num_samples, total_size, np_rng, global_batch_size, iteration):
     """Build the range [0, size) and shuffle."""
     print(' > building shuffle index with split [0, {}) and [{}, {}) '
           '...'.format(num_samples, num_samples, total_size), flush=True)
@@ -547,12 +553,18 @@ def _build_shuffle_idx_val_test(num_samples, total_size, np_rng):
     shuffle_idx_last = np.arange(start=num_samples, stop=total_size,
                                  step=1, dtype=dtype_)
     np_rng.shuffle(shuffle_idx_last)
-
-    return np.concatenate((shuffle_idx_first, shuffle_idx_last))
+    shuffle_idx = np.concatenate((shuffle_idx_first, shuffle_idx_last))
+    # if finetune from previously checkpoint, skip iteration * global_batch_size samples
+    # used in training with discrete data packages
+    if iteration > 0:
+        consumed_samples = global_batch_size * iteration
+        shuffle_idx[consumed_samples:] = shuffle_idx[:-consumed_samples]
+        shuffle_idx[:consumed_samples] = -1
+    return shuffle_idx
 
 # modify shuffle index generation logic by xhq11 to disable epoch > 1
 # make shuffle index = [shuffle index with 1 epoch] + [-1] * remaining length
-def _build_shuffle_idx_train(num_samples_per_epoch, total_size, np_rng):
+def _build_shuffle_idx_train(num_samples_per_epoch, total_size, np_rng, global_batch_size, iteration):
 
     print(' > building shuffle index with split [0, {}) with normal index and [{}, {}) with -1 index to disable epoch > 1 during training'
           '...'.format(num_samples_per_epoch, num_samples_per_epoch, total_size), flush=True)
@@ -566,4 +578,10 @@ def _build_shuffle_idx_train(num_samples_per_epoch, total_size, np_rng):
     
     shuffle_idx_beyond_one_epoch = np.array([-1] * (total_size - num_samples_per_epoch), dtype=dtype_)
     shuffle_idx = np.concatenate((shuffle_idx_in_one_epoch, shuffle_idx_beyond_one_epoch))
+    # if finetune from previously checkpoint, skip iteration * global_batch_size samples
+    # used in training with discrete data packages
+    if iteration > 0:
+        consumed_samples = global_batch_size * iteration
+        shuffle_idx[consumed_samples:] = shuffle_idx[:-consumed_samples]
+        shuffle_idx[:consumed_samples] = -1
     return shuffle_idx
