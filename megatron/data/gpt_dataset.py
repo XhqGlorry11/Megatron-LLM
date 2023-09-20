@@ -540,9 +540,10 @@ def _build_shuffle_idx_val_test(num_samples, total_size, np_rng, global_batch_si
     print(' > building shuffle index with split [0, {}) and [{}, {}) '
           '...'.format(num_samples, num_samples, total_size), flush=True)
     
-    dtype_ = np.uint32
-    if total_size >= (np.iinfo(np.uint32).max - 1):
-        dtype_ = np.int64
+    dtype_ = np.uint64
+    # make sure max_index is larger than shuffle length and will throw an exception when
+    # 1 epoch finishes or start with wrong index when finetune with different data package
+    max_index = np.iinfo(np.uint64).max - 1
 
     shuffle_idx_first = np.arange(start=0, stop=num_samples,
                                   step=1, dtype=dtype_)
@@ -559,29 +560,30 @@ def _build_shuffle_idx_val_test(num_samples, total_size, np_rng, global_batch_si
     if iteration > 0:
         consumed_samples = global_batch_size * iteration
         shuffle_idx[consumed_samples:] = shuffle_idx[:-consumed_samples]
-        shuffle_idx[:consumed_samples] = -1
+        shuffle_idx[:consumed_samples] = max_index
     return shuffle_idx
 
 # modify shuffle index generation logic by xhq11 to disable epoch > 1
 # make shuffle index = [shuffle index with 1 epoch] + [-1] * remaining length
 def _build_shuffle_idx_train(num_samples_per_epoch, total_size, np_rng, global_batch_size, iteration):
 
-    print(' > building shuffle index with split [0, {}) with normal index and [{}, {}) with -1 index to disable epoch > 1 during training'
+    print(' > building shuffle index with split [0, {}) with normal index and [{}, {}) with invalid index to disable epoch > 1 during training'
           '...'.format(num_samples_per_epoch, num_samples_per_epoch, total_size), flush=True)
 
-    dtype_ = np.int32
-    if total_size >= (np.iinfo(np.int32).max - 1):
-        dtype_ = np.int64
+    dtype_ = np.uint64
+    # make sure max_index is larger than shuffle length and will throw an exception when
+    # 1 epoch finishes or start with wrong index when finetune with different data package
+    max_index = np.iinfo(np.uint64).max - 1
     shuffle_idx_in_one_epoch = np.arange(start=0, stop=num_samples_per_epoch,
                                          step=1, dtype=dtype_)
     np_rng.shuffle(shuffle_idx_in_one_epoch)
     
-    shuffle_idx_beyond_one_epoch = np.array([-1] * (total_size - num_samples_per_epoch), dtype=dtype_)
+    shuffle_idx_beyond_one_epoch = np.array([max_index] * (total_size - num_samples_per_epoch), dtype=dtype_)
     shuffle_idx = np.concatenate((shuffle_idx_in_one_epoch, shuffle_idx_beyond_one_epoch))
     # if finetune from previously checkpoint, skip iteration * global_batch_size samples
     # used in training with discrete data packages
     if iteration > 0:
         consumed_samples = global_batch_size * iteration
         shuffle_idx[consumed_samples:] = shuffle_idx[:-consumed_samples]
-        shuffle_idx[:consumed_samples] = -1
+        shuffle_idx[:consumed_samples] = max_index
     return shuffle_idx
