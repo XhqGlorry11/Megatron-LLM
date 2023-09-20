@@ -540,10 +540,10 @@ def _build_shuffle_idx_val_test(num_samples, total_size, np_rng, global_batch_si
     print(' > building shuffle index with split [0, {}) and [{}, {}) '
           '...'.format(num_samples, num_samples, total_size), flush=True)
     
-    dtype_ = np.uint64
+    dtype_ = np.int64
     # make sure max_index is larger than shuffle length and will throw an exception when
     # 1 epoch finishes or start with wrong index when finetune with different data package
-    max_index = np.iinfo(np.uint64).max - 1
+    max_index = np.iinfo(np.int64).max - 1
 
     shuffle_idx_first = np.arange(start=0, stop=num_samples,
                                   step=1, dtype=dtype_)
@@ -570,10 +570,10 @@ def _build_shuffle_idx_train(num_samples_per_epoch, total_size, np_rng, global_b
     print(' > building shuffle index with split [0, {}) with normal index and [{}, {}) with invalid index to disable epoch > 1 during training'
           '...'.format(num_samples_per_epoch, num_samples_per_epoch, total_size), flush=True)
 
-    dtype_ = np.uint64
+    dtype_ = np.int64
     # make sure max_index is larger than shuffle length and will throw an exception when
     # 1 epoch finishes or start with wrong index when finetune with different data package
-    max_index = np.iinfo(np.uint64).max - 1
+    max_index = np.iinfo(np.int64).max - 1
     shuffle_idx_in_one_epoch = np.arange(start=0, stop=num_samples_per_epoch,
                                          step=1, dtype=dtype_)
     np_rng.shuffle(shuffle_idx_in_one_epoch)
