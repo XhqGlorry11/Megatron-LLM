@@ -555,12 +555,7 @@ def _build_shuffle_idx_val_test(num_samples, total_size, np_rng, global_batch_si
                                  step=1, dtype=dtype_)
     np_rng.shuffle(shuffle_idx_last)
     shuffle_idx = np.concatenate((shuffle_idx_first, shuffle_idx_last))
-    # if finetune from previously checkpoint, skip iteration * global_batch_size samples
-    # used in training with discrete data packages
-    if iteration > 0:
-        consumed_samples = global_batch_size * iteration
-        shuffle_idx[consumed_samples:] = shuffle_idx[:-consumed_samples]
-        shuffle_idx[:consumed_samples] = max_index
+
     return shuffle_idx
 
 # modify shuffle index generation logic by xhq11 to disable epoch > 1
