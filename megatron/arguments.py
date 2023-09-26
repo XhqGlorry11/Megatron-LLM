@@ -971,6 +971,9 @@ def _add_data_args(parser):
                        'end-of-document token.')
     group.add_argument('--eod_mask_loss', action='store_true',
                        help='Mask loss for the end of document tokens.')
+    group.add_argument('--bad_iter_file', type=str, default=None,
+                       help='Bad iterations file, used to filter bad data.')
+    
     return parser
 
 
