@@ -17,23 +17,24 @@ wandb login fac46169cec8e164a47ed1c71199e3e8e9f02cc5
 
 
 # CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 /usr/bin/python -m torch.distributed.launch --nproc_per_node=8 --master_port=58417 --use_env \
-torchrun --nproc_per_node 8 --nnodes 3 --node_rank 0 --master_addr 172.17.0.6 --master_port 8088 \
+torchrun --nproc_per_node 8 --nnodes 2 --node_rank 0 --master_addr 172.17.0.6 --master_port 8088 \
 /home/xinghq/megatron-llm/finetune.py \
 --tensor_model_parallel_size=1 \
 --pipeline_model_parallel_size=1 \
---save=/hstore/llm_train_val/megatron-llm/fintune_llama_fp16_grad1_mtl-initialization/checkpoints \
---load=/hstore/llm_train_val/megatron-llm/fintune_llama_fp16_grad1_mtl-initialization/checkpoints \
---train_data_path=/hstore/llm_data/The_Pile/train/tokenization/train_data_text_document \
---test_data_path=/hstore/llm_data/The_Pile/test/tokenization/test_data_text_document \
---valid_data_path=/hstore/llm_data/The_Pile/validate/tokenization/validate_data_text_document \
+--save=/hstore/llm_train_val/megatron-llm/fintune_llama_test/checkpoints_50B_finetune \
+--load=/hstore/llm_train_val/megatron-llm/fintune_llama_test/checkpoints_50B \
+--data_path=/hstore/llm_data/s1_50B_merge/50B \
 --model_name=llama2 \
---tokenizer_type=HFTokenizer \
---vocab_file=/home/xinghq/megatron-llm/tokenizer/neox_20B_tokenizer.json \
+--tokenizer_type=TsTokenizer \
+--vocab_file=/home/xinghq/megatron-llm/tokenizer/TsTokenizer \
 --fp16 \
+--initial_loss_scale 65536 \
 --clip_grad=1 \
+--use_gpt_neox_init_method \
+--use_gpt_neox_output_layer_init_method \
 --use_flash_attn \
 --micro_batch_size=3 \
---global_batch_size=576 \
+--global_batch_size=384 \
 --sequence_parallel \
 --recompute_granularity=selective \
 --use_checkpoint_args \
@@ -43,6 +44,8 @@ torchrun --nproc_per_node 8 --nnodes 3 --node_rank 0 --master_addr 172.17.0.6 --
 --lr_warmup_fraction=0.01 \
 --lr=0.0003 \
 --min_lr=0.00003 \
+--weight_decay=0.1 \
+--use_checkpoint_opt_param_scheduler \
 --no_new_tokens \
 --num_layers=24 \
 --hidden_size=2048 \
@@ -61,12 +64,14 @@ torchrun --nproc_per_node 8 --nnodes 3 --node_rank 0 --master_addr 172.17.0.6 --
 --hidden_dropout=0.0 \
 --attention_dropout=0.0 \
 --log_interval=1 \
---save_interval=2000 \
---eval_interval=100 \
+--save_interval=20000 \
+--eval_interval=10 \
+--eval_iters=10 \
 --log_params_norm \
 --log_timers_to_tensorboard \
 --wandb_logger \
 --wandb_project=llama-megatron-3nodes \
---wandb_id=6_fp16_grad1_mtl-initialization \
+--wandb_id=6_test_tencent_5B_4 \
+--wandb_resume \
 --wandb_api_key=fac46169cec8e164a47ed1c71199e3e8e9f02cc5 \
 2>&1 |tee /home/xinghq/megatron-llm/logs/3nodes.txt
