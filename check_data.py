@@ -99,8 +99,9 @@ def check(args):
     # assert args.bad_iter_file, "bad_iter_file must be provided."
     # with open(args.bad_iter_file, 'r') as f:
     #     bad_iters = f.readlines()
-    bad_iters = ["20000", "20001"]
+    bad_iters = ['20000', '20001']
     bad_iters = [int(bad_iter.strip()) for bad_iter in bad_iters]
+    cnt = 0
     for bad_iter in bad_iters:
         # batch size = 1
         for global_batch_index in range(args.global_batch_size):
@@ -119,7 +120,12 @@ def check(args):
             optimizer._copy_model_grads_to_main_grads()
             grad_norm = optimizer.clip_grad_norm(optimizer.clip_grad)
             grad_norm /= optimizer.grad_scaler.scale
-            print (grad_norm)
+            print ('%d %f' % (cur_index, float(grad_norm)))
+            # with open('/home/xinghq/megatron-llm/check_data_res/good.txt', 'a') as f:
+            #     f.writelines('%d %f\n' % (cur_index, float(grad_norm)))
+            # cnt += 1
+            # if cnt % 1000 == 0:
+            #     print ('%d finished.' % cnt)
 
 if __name__ == '__main__':
     initialize_megatron(extra_args_provider=extra_args, args_defaults={})
