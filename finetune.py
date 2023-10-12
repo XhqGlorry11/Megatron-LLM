@@ -122,7 +122,8 @@ def train_valid_test_datasets_provider(train_val_test_num_samples):
         valid_data_prefix=args.valid_data_path,
         test_data_prefix=args.test_data_path,
         global_batch_size=args.global_batch_size,
-        iteration=args.iteration)
+        iteration=args.iteration,
+        force_one_epoch=args.force_one_epoch)
     print_rank_0("> finished creating GPT datasets ...")
 
     return train_ds, valid_ds, test_ds

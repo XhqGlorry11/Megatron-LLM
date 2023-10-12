@@ -28,7 +28,8 @@ def build_train_valid_test_datasets(data_prefix: Optional[str],
                                     valid_data_prefix=None,
                                     test_data_prefix=None,
                                     global_batch_size=0,
-                                    iteration=0):
+                                    iteration=0,
+                                    force_one_epoch=True):
     """Build train, valid, and test datasets."""
     if data_prefix:
         print_rank_0("Single data path provided for train, valid & test")
@@ -42,7 +43,8 @@ def build_train_valid_test_datasets(data_prefix: Optional[str],
                                                     seed,
                                                     skip_warmup,
                                                     global_batch_size,
-                                                    iteration)
+                                                    iteration,
+                                                    force_one_epoch)
         print ('logic modified by xhq, multiple data_pathes not supported currently.')
         raise ValueError
         # Blending dataset.
@@ -170,7 +172,8 @@ def _build_train_valid_test_datasets(data_prefix,
                                      seed,
                                      skip_warmup,
                                      global_batch_size,
-                                     iteration):
+                                     iteration,
+                                     force_one_epoch):
     """Build train, valid, and test datasets."""
 
     # Indexed dataset.
@@ -193,23 +196,23 @@ def _build_train_valid_test_datasets(data_prefix,
     print_split_stats('validation', 1)
     print_split_stats('test', 2)
 
-    def _f(index, name, documents_total, global_batch_size, iteration):
+    def _f(index, name, documents_total, global_batch_size, iteration, force_one_epoch):
         dataset = None
         if splits[index + 1] > splits[index]:
             documents = documents_total[splits[index]: splits[index + 1]]
             dataset = GPTDataset(name, data_prefix,
                                   documents, indexed_dataset,
                                   train_valid_test_num_samples[index],
-                                  seq_length, seed, global_batch_size, iteration)
+                                  seq_length, seed, global_batch_size, iteration, force_one_epoch)
         return dataset
 
     # shuffle documents index in advance to avoid continuos train/valid/test dataset within a whole bin data file.
     documents_total = np.arange(start=0, stop=splits[-1], step=1, dtype=np.int64)
     np.random.shuffle(documents_total)
 
-    train_dataset = _f(0, 'train', documents_total, global_batch_size, iteration)
-    valid_dataset = _f(1, 'valid', documents_total, global_batch_size, iteration)
-    test_dataset = _f(2, 'test', documents_total, global_batch_size, iteration)
+    train_dataset = _f(0, 'train', documents_total, global_batch_size, iteration, force_one_epoch)
+    valid_dataset = _f(1, 'valid', documents_total, global_batch_size, iteration, force_one_epoch)
+    test_dataset = _f(2, 'test', documents_total, global_batch_size, iteration, force_one_epoch)
 
     return train_dataset, valid_dataset, test_dataset
 
@@ -232,7 +235,7 @@ def get_indexed_dataset_(data_prefix, data_impl, skip_warmup):
 class GPTDataset(torch.utils.data.Dataset):
 
     def __init__(self, name, data_prefix, documents, indexed_dataset,
-                 num_samples, seq_length, seed, global_batch_size, iteration):
+                 num_samples, seq_length, seed, global_batch_size, iteration, force_one_epoch):
 
         self.name = name
         self.indexed_dataset = indexed_dataset
@@ -244,7 +247,7 @@ class GPTDataset(torch.utils.data.Dataset):
         # Build index mappings.
         self.doc_idx, self.sample_idx, self.shuffle_idx = _build_index_mappings(
             self.name, data_prefix, documents, self.indexed_dataset.sizes,
-            num_samples, seq_length, seed, global_batch_size, iteration)
+            num_samples, seq_length, seed, global_batch_size, iteration, force_one_epoch)
 
     def __len__(self):
         # -1 is due to data structure used to retieve the index:
@@ -281,7 +284,7 @@ class GPTDataset(torch.utils.data.Dataset):
 
 
 def _build_index_mappings(name, data_prefix, documents, sizes,
-                          num_samples, seq_length, seed, global_batch_size, iteration):
+                          num_samples, seq_length, seed, global_batch_size, iteration, force_one_epoch=True):
     """Build doc-idx, sample-idx, and shuffle-idx.
     doc-idx: is an array (ordered) of documents to be used in training.
     sample-idx: is the start document index and document offset for each
@@ -353,11 +356,14 @@ def _build_index_mappings(name, data_prefix, documents, sizes,
 
             # doc-idx.
             start_time = time.time()
-            if 'train' in doc_idx_filename:
-                doc_idx = _build_doc_idx_train(documents, num_epochs, np_rng,
-                                               separate_last_epoch)
+            if 'train' in os.path.basename(doc_idx_filename):
+                if force_one_epoch:
+                    doc_idx = _build_doc_idx_train(documents, num_epochs, np_rng,
+                                                separate_last_epoch)
+                else:
+                    doc_idx = _build_doc_idx_val_test(documents, num_epochs, np_rng, separate_last_epoch)
             else:
-                assert 'valid' in doc_idx_filename or 'test' in doc_idx_filename
+                assert 'valid' in os.path.basename(doc_idx_filename) or 'test' in os.path.basename(doc_idx_filename)
                 doc_idx = _build_doc_idx_val_test(documents, num_epochs, np_rng,
                                                   separate_last_epoch)
             np.save(doc_idx_filename, doc_idx, allow_pickle=True)
@@ -381,11 +387,18 @@ def _build_index_mappings(name, data_prefix, documents, sizes,
             start_time = time.time()
             # -1 is due to data structure used to retieve the index:
             #    sample i --> [sample_idx[i], sample_idx[i+1])
-            if 'train' in shuffle_idx_filename:
-                num_samples_per_epoch = (tokens_per_epoch - 1) // seq_length
-                shuffle_idx = _build_shuffle_idx_train(num_samples_per_epoch, sample_idx.shape[0] - 1, np_rng, global_batch_size, iteration)
+            if 'train' in os.path.basename(shuffle_idx_filename):
+                if force_one_epoch:
+                    num_samples_per_epoch = (tokens_per_epoch - 1) // seq_length
+                    shuffle_idx = _build_shuffle_idx_train(num_samples_per_epoch, sample_idx.shape[0] - 1, np_rng, global_batch_size, iteration)
+                else:
+                    if separate_last_epoch:
+                        num_samples_ = num_samples_from_epochs_minus_one
+                    else:
+                        num_samples_ = sample_idx.shape[0] - 1
+                    shuffle_idx = _build_shuffle_idx_val_test(num_samples_, sample_idx.shape[0] - 1, np_rng, global_batch_size, iteration)
             else:
-                assert 'valid' in doc_idx_filename or 'test' in doc_idx_filename
+                assert 'valid' in os.path.basename(shuffle_idx_filename) or 'test' in os.path.basename(shuffle_idx_filename)
                 if separate_last_epoch:
                     num_samples_ = num_samples_from_epochs_minus_one
                 else:
@@ -541,9 +554,6 @@ def _build_shuffle_idx_val_test(num_samples, total_size, np_rng, global_batch_si
           '...'.format(num_samples, num_samples, total_size), flush=True)
     
     dtype_ = np.int64
-    # make sure max_index is larger than shuffle length and will throw an exception when
-    # 1 epoch finishes or start with wrong index when finetune with different data package
-    max_index = np.iinfo(np.int64).max - 1
 
     shuffle_idx_first = np.arange(start=0, stop=num_samples,
                                   step=1, dtype=dtype_)

@@ -895,6 +895,8 @@ def _add_data_args(parser):
                        'single dataset used for all three: train, valid '
                        'and test. It is exclusive to the other '
                        '--*-data_path args')
+    group.add_argument('--force_one_epoch', action='store_true',
+                       help='whether force the dataset to be used just 1 epoch.')
     group.add_argument('--split', type=str, default='969, 30, 1',
                        help='Comma-separated list of proportions for training,'
                        ' validation, and test split. For example the split '
