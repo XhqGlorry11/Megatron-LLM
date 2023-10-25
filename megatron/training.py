@@ -659,9 +659,9 @@ def _train(args, forward_step_func,
 
     # Iterations.
     iteration = args.iteration
-
     timers('interval-time', log_level=0).start(barrier=True)
     print_datetime('before the start of training step')
+    
     report_memory_flag = True
     while iteration < args.train_iters:
         update_num_microbatches(args.consumed_train_samples)

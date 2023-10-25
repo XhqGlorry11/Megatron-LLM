@@ -115,6 +115,8 @@ def forward_step(forward_step_func,
 
     unwrapped_model.set_input_tensor(input_tensor)
     output_tensor, loss_func = forward_step_func(data_iterator, model)
+    if args.not_calculate_loss:
+        return output_tensor
     if mpu.is_pipeline_last_stage():
         if not collect_non_loss_data:
             output_tensor = loss_func(output_tensor)
@@ -246,7 +248,8 @@ def forward_backward_no_pipelining(forward_step_func,
     if not forward_only:
         backward_step(optimizer, input_tensor, output_tensor,
                       output_tensor_grad, timers)
-
+    if forward_only:
+        return output_tensor
     return forward_data_store
 
 
@@ -704,6 +707,9 @@ def forward_backward_pipelining_without_interleaving(forward_step_func,
                 input_tensor = \
                     send_backward_recv_forward(
                         input_tensor_grad, recv_tensor_shapes, timers=timers)
+
+    if forward_only:
+        return output_tensor
 
     # Run cooldown backward passes.
     if not forward_only:

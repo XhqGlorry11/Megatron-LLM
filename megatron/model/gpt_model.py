@@ -26,19 +26,20 @@ def post_language_model_processing(lm_output, labels, logit_weights,
         lm_output,
         logit_weights,
         parallel_output)
-
     if labels is None:
         # [s b h] => [b s h]
         return output.transpose(0,1).contiguous()
     else:
         # [b s] => [s b]
+        # import numpy as np
+        # np.save('/home/xinghq/npy/tp_3.npy', output.transpose(0,1).contiguous().detach().cpu().numpy())
         labels = labels.transpose(0,1).contiguous()
         if fp16_lm_cross_entropy:
             assert output.dtype == torch.half
             loss = tensor_parallel.vocab_parallel_cross_entropy(output, labels)
         else:
             loss = tensor_parallel.vocab_parallel_cross_entropy(output.float(), labels)
-        
+            
         # [s b] => [b, s]
         loss = loss.transpose(0,1).contiguous()
         return loss
@@ -52,7 +53,8 @@ class GPTModel(MegatronModule):
                  parallel_output=True,
                  pre_process=True,
                  post_process=True,
-                 model_type=None):
+                 model_type=None,
+                 not_calculate_loss=False):
 
         args = get_args()
         super(GPTModel, self).__init__(share_word_embeddings=args.tie_embed_logits)
@@ -88,6 +90,7 @@ class GPTModel(MegatronModule):
 
         if self.tie_embed_logits:
             self.initialize_word_embeddings(init_method_normal, args)
+        self.not_calculate_loss = not_calculate_loss
 
     def set_input_tensor(self, input_tensor):
         """See megatron.model.transformer.set_input_tensor()"""
@@ -103,11 +106,18 @@ class GPTModel(MegatronModule):
             inference_params=inference_params)
 
         if self.post_process:
-            return post_language_model_processing(
-                lm_output, labels,
-                self.word_embeddings_weight(),
-                self.parallel_output,
-                self.fp16_lm_cross_entropy)
+            if not self.not_calculate_loss:
+                return post_language_model_processing(
+                    lm_output, labels,
+                    self.word_embeddings_weight(),
+                    self.parallel_output,
+                    self.fp16_lm_cross_entropy)
+            else:
+                return post_language_model_processing(
+                    lm_output, None,
+                    self.word_embeddings_weight(),
+                    self.parallel_output,
+                    self.fp16_lm_cross_entropy)
         else:
             return lm_output
 

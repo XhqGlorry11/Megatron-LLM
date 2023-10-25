@@ -40,4 +40,4 @@ class LlamaModel(GPTModel):
             warnings.warn( "Llama is not intended to use dropout")
         super().__init__(num_tokentypes=num_tokentypes, parallel_output=parallel_output,
                          pre_process=pre_process, post_process=post_process,
-                         model_type=model_type)
+                         model_type=model_type, not_calculate_loss=args.not_calculate_loss)
