@@ -91,6 +91,120 @@ def get_language_model(num_tokentypes,
     )
     # key used for checkpoints.
     language_model_key = 'language_model'
+    # xinghq add, performe fixed initialization
+    if args.fixed_initialization:
+        assert args.num_layers_per_virtual_pipeline_stage is None
+        assert args.virtual_pipeline_model_parallel_size is None
+        assert args.tensor_model_parallel_size == 1
+        assert args.pipeline_model_parallel_size == 1
+        assert args.num_layers == 24
+        assert args.hidden_size == 2048
+        assert args.num_attention_heads == 16
+        assert args.ffn_hidden_size == 5632
+        
+        import json, os
+        from torch.nn.parameter import Parameter     
+
+        def permute_qkv(qkv_w: torch.Tensor, dim: int, n_heads: int,
+                n_heads_kv: int, revert: bool = False) -> torch.Tensor:
+
+            def permute(x):
+                if revert:
+                    return x.view(head_dim//2, 2, dim).transpose(0, 1).reshape(head_dim, dim)
+                return x.view(2, head_dim//2, dim).transpose(0, 1).reshape(head_dim, dim)
+
+            head_dim = dim//n_heads
+            n_qs_per_kv = n_heads//n_heads_kv
+            n_groups = qkv_w.size(0)//head_dim//(n_qs_per_kv + 2)
+            groups = torch.chunk(qkv_w, n_groups, dim=0)
+            new = []
+            for group in groups:
+                *qs, k, v = torch.split(group, head_dim, dim=0)
+                assert len(qs) == n_qs_per_kv, f"{len(qs)}, {n_qs_per_kv}"
+                new += list(map(permute, qs)) + [permute(k), v]
+            return torch.cat(new, dim=0)
+
+        def convert_wqkv(qkv_w, n_heads=16, n_heads_kv=16):
+            n_hidden = qkv_w.size(1)
+            hidden_dim = n_hidden//n_heads
+            qkv_w = permute_qkv(qkv_w, n_hidden, n_heads, n_heads_kv, revert=True)
+
+            n_qs_per_kv = n_heads//n_heads_kv
+            n_groups = qkv_w.size(0)//hidden_dim//(n_qs_per_kv + 2)
+            qkv_w = list(torch.split(qkv_w, hidden_dim, dim=0))
+
+            wq, wk, wv = [], [], []
+            for group in range(n_groups):
+                for qs in range(n_qs_per_kv):
+                    wq.append(qkv_w[0])
+                    del qkv_w[0]
+                wk.append(qkv_w[0])
+                del qkv_w[0]
+                wv.append(qkv_w[0])
+                del qkv_w[0]
+            assert len(qkv_w) == 0
+
+            wq = torch.concat(wq, dim=0)
+            wk = torch.concat(wk, dim=0)
+            wv = torch.concat(wv, dim=0)
+            return wq, wk, wv
+
+        current_dir = os.path.dirname(os.path.abspath(__file__))
+        with open('%s/../../tools/parameter_analysis/name2value.json' % current_dir, 'r') as f:
+            name2value = json.loads(f.read())
+        for layer_name in name2value.keys():
+            # embedding
+            if layer_name == 'model.embed_tokens.weight':
+                mean, std = name2value[layer_name]
+                weight = language_model.embedding.word_embeddings.weight
+                torch.nn.init.normal_(weight, mean=mean, std=std)
+            elif layer_name == 'lm_head.weight':
+                mean, std = name2value[layer_name]
+                weight = language_model.lm_head
+                torch.nn.init.normal_(weight, mean=mean, std=std)
+            elif layer_name == 'model.norm.weight':
+                mean, std = name2value[layer_name]
+                weight = language_model.encoder.final_layernorm.weight
+                torch.nn.init.normal_(weight, mean=mean, std=std)
+            else:
+                layer_index = int(layer_name.split('.')[2])
+                if 'input_layernorm' in layer_name:
+                    mean, std = name2value[layer_name]
+                    weight = language_model.encoder.layers[layer_index].input_layernorm.weight
+                    torch.nn.init.normal_(weight, mean=mean, std=std)
+                elif 'post_attention_layernorm' in layer_name:
+                    mean, std = name2value[layer_name]
+                    weight = language_model.encoder.layers[layer_index].post_attention_layernorm.weight
+                    torch.nn.init.normal_(weight, mean=mean, std=std)
+                elif 'down_proj' in layer_name:
+                    mean, std = name2value[layer_name]
+                    weight = language_model.encoder.layers[layer_index].mlp.dense_4h_to_h.weight
+                    torch.nn.init.normal_(weight, mean=mean, std=std)
+                elif 'o_proj' in layer_name:
+                    mean, std = name2value[layer_name]
+                    weight = language_model.encoder.layers[layer_index].self_attention.dense.weight
+                    torch.nn.init.normal_(weight, mean=mean, std=std)
+                elif 'q_proj' in layer_name:
+                    mean_q, std_q = name2value[layer_name]
+                    mean_k, std_k = name2value[layer_name.replace('q_proj', 'k_proj')]
+                    mean_v, std_v = name2value[layer_name.replace('q_proj', 'v_proj')]
+                    weight = language_model.encoder.layers[layer_index].self_attention.query_key_value.weight
+                    wq_proj, wk_proj, wv_proj = convert_wqkv(weight, n_heads=16, n_heads_kv=16)
+                    torch.nn.init.normal_(wq_proj, mean=mean_q, std=std_q)
+                    torch.nn.init.normal_(wk_proj, mean=mean_k, std=std_k)
+                    torch.nn.init.normal_(wv_proj, mean=mean_v, std=std_v)
+
+                elif 'gate_proj' in layer_name:
+                    mean_gated, std_gated = name2value[layer_name]
+                    mean_up, std_up = name2value[layer_name.replace('gate_proj', 'up_proj')]
+                    weight = language_model.encoder.layers[layer_index].mlp.dense_h_to_4h.weight
+                    weight_up = weight[:5632, :]
+                    weight_gated = weight[5632:, :]
+                    torch.nn.init.normal_(weight_up, mean=mean_up, std=std_up)
+                    torch.nn.init.normal_(weight_gated, mean=mean_gated, std=std_gated)
+                else:
+                    continue
+
     return language_model, language_model_key
 
 
