@@ -9,7 +9,7 @@ from typing import Optional, List
 import numpy as np
 import torch
 
-from megatron import print_rank_0
+from megatron import print_rank_0, get_args
 from megatron.core import mpu
 from megatron.data.blendable_dataset import BlendableDataset
 from megatron.data.dataset_utils import get_datasets_weights_and_num_samples
@@ -175,6 +175,7 @@ def _build_train_valid_test_datasets(data_prefix,
                                      iteration,
                                      force_one_epoch):
     """Build train, valid, and test datasets."""
+    args = get_args()
 
     # Indexed dataset.
     indexed_dataset = get_indexed_dataset_(data_prefix,
@@ -196,23 +197,25 @@ def _build_train_valid_test_datasets(data_prefix,
     print_split_stats('validation', 1)
     print_split_stats('test', 2)
 
-    def _f(index, name, documents_total, global_batch_size, iteration, force_one_epoch):
-        dataset = None
-        if splits[index + 1] > splits[index]:
-            documents = documents_total[splits[index]: splits[index + 1]]
-            dataset = GPTDataset(name, data_prefix,
-                                  documents, indexed_dataset,
-                                  train_valid_test_num_samples[index],
-                                  seq_length, seed, global_batch_size, iteration, force_one_epoch)
+    def _f(index, name, documents, global_batch_size, iteration, force_one_epoch):
+        dataset = GPTDataset(name, data_prefix,
+                                documents, indexed_dataset,
+                                train_valid_test_num_samples[index],
+                                seq_length, seed, global_batch_size, iteration, force_one_epoch)
         return dataset
 
     # shuffle documents index in advance to avoid continuos train/valid/test dataset within a whole bin data file.
     documents_total = np.arange(start=0, stop=splits[-1], step=1, dtype=np.int64)
     np.random.shuffle(documents_total)
+    documents_train = documents_total[:splits[1]]
+    documents_valid = documents_total[splits[1]: splits[2]]
+    documents_test = documents_total[splits[2]:]
+    if args.relative_data_packing:
+        documents_train = np.sort(documents_train)
 
-    train_dataset = _f(0, 'train', documents_total, global_batch_size, iteration, force_one_epoch)
-    valid_dataset = _f(1, 'valid', documents_total, global_batch_size, iteration, force_one_epoch)
-    test_dataset = _f(2, 'test', documents_total, global_batch_size, iteration, force_one_epoch)
+    train_dataset = _f(0, 'train', documents_train, global_batch_size, iteration, force_one_epoch)
+    valid_dataset = _f(1, 'valid', documents_valid, global_batch_size, iteration, force_one_epoch)
+    test_dataset = _f(2, 'test', documents_test, global_batch_size, iteration, force_one_epoch)
 
     return train_dataset, valid_dataset, test_dataset
 
@@ -291,6 +294,7 @@ def _build_index_mappings(name, data_prefix, documents, sizes,
        training sample.
     shuffle-idx: maps the sample index into a random index into sample-idx.
     """
+    args = get_args()
     # Number of tokens in each epoch and number of required epochs.
     tokens_per_epoch = _num_tokens(documents, sizes)
     num_epochs = _num_epochs(tokens_per_epoch, seq_length, num_samples)
@@ -359,13 +363,13 @@ def _build_index_mappings(name, data_prefix, documents, sizes,
             if 'train' in os.path.basename(doc_idx_filename):
                 if force_one_epoch:
                     doc_idx = _build_doc_idx_train(documents, num_epochs, np_rng,
-                                                separate_last_epoch)
+                                                separate_last_epoch, args.relative_data_packing)
                 else:
-                    doc_idx = _build_doc_idx_val_test(documents, num_epochs, np_rng, separate_last_epoch)
+                    doc_idx = _build_doc_idx_val_test(documents, num_epochs, np_rng, separate_last_epoch, args.relative_data_packing)
             else:
                 assert 'valid' in os.path.basename(doc_idx_filename) or 'test' in os.path.basename(doc_idx_filename)
                 doc_idx = _build_doc_idx_val_test(documents, num_epochs, np_rng,
-                                                  separate_last_epoch)
+                                                  separate_last_epoch, args.relative_data_packing)
             np.save(doc_idx_filename, doc_idx, allow_pickle=True)
             print(' > elasped time to build and save doc-idx mapping '
                          '(seconds): {:4f}'.format(time.time() - start_time))
@@ -461,7 +465,7 @@ def _num_epochs(tokens_per_epoch, seq_length, num_samples):
             return num_epochs
 
 
-def _build_doc_idx_val_test(documents, num_epochs, np_rng, separate_last_epoch):
+def _build_doc_idx_val_test(documents, num_epochs, np_rng, separate_last_epoch, relative_data_packing=False):
     """Build an array with length = number-of-epochs * number-of-dcuments.
     Each index is mapped to a corresponding document."""
     if not separate_last_epoch or num_epochs == 1:
@@ -469,23 +473,25 @@ def _build_doc_idx_val_test(documents, num_epochs, np_rng, separate_last_epoch):
         doc_idx[:] = documents
         doc_idx = doc_idx.reshape(-1)
         doc_idx = doc_idx.astype(np.int32)
-        np_rng.shuffle(doc_idx)
+        if not relative_data_packing:
+            np_rng.shuffle(doc_idx)
         return doc_idx
 
-    doc_idx_first = _build_doc_idx_val_test(documents, num_epochs-1, np_rng, False)
-    doc_idx_last = _build_doc_idx_val_test(documents, 1, np_rng, False)
+    doc_idx_first = _build_doc_idx_val_test(documents, num_epochs-1, np_rng, False, relative_data_packing)
+    doc_idx_last = _build_doc_idx_val_test(documents, 1, np_rng, False, relative_data_packing)
     return np.concatenate((doc_idx_first, doc_idx_last))
 
 
-def _build_doc_idx_train(documents, num_epochs, np_rng, separate_last_epoch):
+def _build_doc_idx_train(documents, num_epochs, np_rng, separate_last_epoch, relative_data_packing=False):
     """Build an array with length = number-of-epochs * number-of-dcuments.
     Each index is mapped to a corresponding document."""
-    if not separate_last_epoch or num_epochs == 1:
+    if num_epochs == 1:
         doc_idx = np.mgrid[0:num_epochs, 0:len(documents)][1]
         doc_idx[:] = documents
         doc_idx = doc_idx.reshape(-1)
         doc_idx = doc_idx.astype(np.int32)
-        np_rng.shuffle(doc_idx)
+        if not relative_data_packing:
+            np_rng.shuffle(doc_idx)
         return doc_idx
 
 
@@ -493,7 +499,7 @@ def _build_doc_idx_train(documents, num_epochs, np_rng, separate_last_epoch):
     # shuffle([index in one epoch] * num_epoch) -> shuffle([index in one epoch]) * num_epoch
     doc_holders = []
     for _ in range(num_epochs):
-        cur_doc_idx = _build_doc_idx_train(documents, 1, np_rng, False)
+        cur_doc_idx = _build_doc_idx_train(documents, 1, np_rng, False, relative_data_packing)
         doc_holders.append(cur_doc_idx)
     doc_idx_total = np.concatenate(doc_holders)
     return doc_idx_total

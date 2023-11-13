@@ -978,6 +978,9 @@ def _add_data_args(parser):
                        help='Mask loss for the end of document tokens.')
     group.add_argument('--bad_iter_file', type=str, default=None,
                        help='Bad iterations file, used to filter bad data.')
+    group.add_argument('--relative_data_packing', action='store_true',
+                       help='whether use relative data packing to pack relative data into the same sample.')
+    
     
     return parser
 
