@@ -1240,7 +1240,7 @@ class ParallelTransformer(MegatronModule):
                             hidden_states,
                             attention_mask,
                             **forward_kwargs)
-
+                        
                 # Skip counter update for eval and activation checkpointing
                 if torch.is_grad_enabled() and self.training:
                     self.microbatch_count += 1

@@ -711,8 +711,9 @@ def _add_initialization_args(parser):
     group.add_argument('--use_gpt_neox_output_layer_init_method', action='store_true',
                        help='Use gpt-neox output layer initmethod, also called Wang init '
                        'refer to paper for details.')
-    group.add_argument('--not_calculate_loss', action='store_true',
-                       help='Do not calculate loss in forward process, used in inference.')
+    group.add_argument('--fixed_initialization', action='store_true',
+                       help='use fixed per-layer initialization std, hand_written in initialization.')
+    
     return parser
 
 
