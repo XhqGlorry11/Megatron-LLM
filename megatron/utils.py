@@ -138,7 +138,8 @@ def get_ltor_masks_and_position_ids(data,
                                     eod_token,
                                     reset_position_ids,
                                     reset_attention_mask,
-                                    eod_mask_loss):
+                                    eod_mask_loss,
+                                    splits=None):
     """Build masks and position id for left to right model."""
 
     # Extract batch size and sequence length.
@@ -157,6 +158,16 @@ def get_ltor_masks_and_position_ids(data,
     loss_mask = torch.ones(data.size(), dtype=torch.float, device=data.device)
     if eod_mask_loss:
         loss_mask[data == eod_token] = 0.0
+    if splits is not None:
+        loss_mask_add = torch.arange(0, 4, 4 / seq_length, dtype=torch.float, device=data.device)
+        for batch_index in range(micro_batch_size):
+            split = splits[batch_index]
+            split_indexes = torch.where(split == 1)[0]
+            for idx in range(split_indexes.shape[0]):
+                if idx == 0:
+                    loss_mask[batch_index][:split_indexes[idx] + 1] += loss_mask_add[:split_indexes[idx] + 1]
+                else:
+                    loss_mask[batch_index][split_indexes[idx - 1] + 1:split_indexes[idx] + 1] += loss_mask_add[:split_indexes[idx] - split_indexes[idx - 1]]
 
     # Position ids.
     position_ids = torch.arange(seq_length, dtype=torch.long,

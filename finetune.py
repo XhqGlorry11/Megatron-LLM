@@ -54,7 +54,7 @@ def get_batch(data_iterator):
     tokenizer = get_tokenizer()
 
     # Items and their type.
-    keys = ['text']
+    keys = ['text', 'split']
     datatype = torch.int64
 
     # Broadcast data.
@@ -66,16 +66,26 @@ def get_batch(data_iterator):
 
     # Unpack.
     tokens_ = data_b['text'].long()
+    splits = data_b['split'].long()[:, :-1].contiguous()
     labels = tokens_[:, 1:].contiguous()
     tokens = tokens_[:, :-1].contiguous()
 
-    # Get the masks and postition ids.
-    attention_mask, loss_mask, position_ids = get_ltor_masks_and_position_ids(
-        tokens,
-        tokenizer.eod,
-        args.reset_position_ids,
-        args.reset_attention_mask,
-        args.eod_mask_loss)
+    if not args.loss_mask_over_sequence:
+        # Get the masks and postition ids.
+        attention_mask, loss_mask, position_ids = get_ltor_masks_and_position_ids(
+            tokens,
+            tokenizer.eod,
+            args.reset_position_ids,
+            args.reset_attention_mask,
+            args.eod_mask_loss)
+    else:
+        attention_mask, loss_mask, position_ids = get_ltor_masks_and_position_ids(
+            tokens,
+            tokenizer.eod,
+            args.reset_position_ids,
+            args.reset_attention_mask,
+            args.eod_mask_loss,
+            splits)
 
     return tokens, labels, loss_mask, attention_mask, position_ids
 
@@ -98,7 +108,7 @@ def forward_step(data_iterator, model):
     timers("batch-generator", log_level=2).start()
     tokens, labels, loss_mask, attention_mask, position_ids = get_batch(data_iterator)
     timers("batch-generator").stop()
-
+    
     output_tensor = model(tokens, position_ids, attention_mask,
                           labels=labels)
     return output_tensor, partial(loss_func, loss_mask)

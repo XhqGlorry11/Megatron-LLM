@@ -6,6 +6,8 @@ from abc import ABC
 from abc import abstractmethod
 from tokenizers import Tokenizer
 from typing import List, Union
+import sys
+sys.path.append('/home/xinghq/megatron-llm/megatron/tokenizer')
 
 from .bert_tokenization import FullTokenizer as FullBertTokenizer
 from .gpt2_tokenization import GPT2Tokenizer
@@ -595,10 +597,31 @@ class _TsTokenizer(AbstractTokenizer):
   @property
   def eod(self):
     return self.eod_id
-  
+
+import random
+import json
 if __name__ == '__main__':
-    tokenizer = _TsTokenizer(vocab_file='/home/xinghq/megatron-llm/tokenizer/llama2-merged')
-    token = tokenizer.tokenize('我爱学习。')
+    tokenizer = _TsTokenizer(vocab_file='/home/xinghq/megatron-llm/tokenizer/TsTokenizer_v6')
+    vocab = tokenizer.vocab
+    index = 114671
+    added_tokens = {}
+    while(index <= 134671):
+        num = random.randint(30, 50)
+        key = ''
+        for i in range(num):
+           cur_chr = random.randint(65, 122)
+           key += chr(cur_chr)
+        if key not in vocab.keys():
+           added_tokens[key] = index
+           index += 1
+    with open('/home/xinghq/megatron-llm/tokenizer/TsTokenizer_v6_dustbin2/added_tokens.json', 'w') as f:
+       f.write(json.dumps(added_tokens, indent=2))
+        
+
+
+    token = tokenizer.tokenize('\nD')
+    print (token)
+    print (tokenizer.detokenize(29933))
     for t in token:
        print (tokenizer.detokenize(t))
-    string = tokenizer.detokenize(token)
+    # string = tokenizer.detokenize(token)

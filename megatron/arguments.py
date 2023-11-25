@@ -459,7 +459,7 @@ def _add_network_size_args(parser):
                        help='Define position embedding type ("absolute" | "rotary"). "absolute" by default.')
     group.add_argument('--rope_scaling_factor', type=float, default=1.0,
                        help='Set the linear RoPE scaling factor for sequence interpolation.')
-    group.add_argument('--rope_theta', type=float, default=10000.0,
+    group.add_argument('--rope_theta', type=float, default=1000000.0,
                        help='Set RoPE theta base (llama/llama2: 1e4, codellama: 1e6).')
     # Added mainly for Falcon
     group.add_argument("--parallel_attn", action="store_true",
@@ -687,6 +687,11 @@ def _add_training_args(parser):
                        help='Disable fusing gradient accumulation to weight '
                        'gradient computation of linear layers',
                        dest='gradient_accumulation_fusion')
+    group.add_argument('--loss_mask_over_sequence', action='store_true',
+                       help='use linear decay loss mask over sequence.')
+    group.add_argument('--diasble_zero_grad_parameter_update', action='store_true',
+                       help='If true, disable 1/2 order momentum update in optimizer '
+                       'and parameter optimizer of the parameters whose grad is 0')
     return parser
 
 

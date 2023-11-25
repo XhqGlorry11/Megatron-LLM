@@ -242,6 +242,7 @@ class GPTDataset(torch.utils.data.Dataset):
 
         self.name = name
         self.indexed_dataset = indexed_dataset
+        self.seq_length = seq_length
 
         # Checks
         assert np.min(documents) >= 0
@@ -270,6 +271,7 @@ class GPTDataset(torch.utils.data.Dataset):
             sample = self.indexed_dataset.get(self.doc_idx[doc_index_f],
                                               offset=offset_f,
                                               length=offset_l - offset_f + 1)
+            data_split = np.array([self.seq_length])
         else:
             # Otherwise, get the rest of the initial document.
             sample_list = [self.indexed_dataset.get(self.doc_idx[doc_index_f],
@@ -281,9 +283,20 @@ class GPTDataset(torch.utils.data.Dataset):
             sample_list.append(self.indexed_dataset.get(
                 self.doc_idx[doc_index_l],
                 length=offset_l + 1))
+            data_split = []
+            for single_split in sample_list:
+                if len(data_split) == 0:
+                    data_split.append(single_split.shape[0] - 1)
+                else:
+                    data_split.append(single_split.shape[0] + data_split[-1])
+            data_split = np.array(data_split)
             sample = np.concatenate(sample_list)
+        split = np.zeros(shape=[data_split[-1] + 1], dtype=np.int64)
+        split[data_split] = 1
+        # set split[seq_length - 1] = 1
+        split[-2] = 1
 
-        return {'text': np.array(sample, dtype=np.int64)}
+        return {'text': np.array(sample, dtype=np.int64), 'split': split}
 
 
 def _build_index_mappings(name, data_prefix, documents, sizes,
