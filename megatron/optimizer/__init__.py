@@ -1,6 +1,7 @@
 # Copyright (c) 2022, NVIDIA CORPORATION. All rights reserved.
 
-from apex.optimizers import FusedAdam as Adam
+# from apex.optimizers import FusedAdam as Adam
+from megatron.optimizer.fused_adam import FusedAdam as Adam
 from apex.optimizers import FusedSGD as SGD
 
 from megatron import get_args
@@ -77,7 +78,8 @@ def get_megatron_optimizer(model,
                          lr=args.lr,
                          weight_decay=args.weight_decay,
                          betas=(args.adam_beta1, args.adam_beta2),
-                         eps=args.adam_eps)
+                         eps=args.adam_eps,
+                         diasble_zero_grad_parameter_update=args.diasble_zero_grad_parameter_update)
     elif args.optimizer == 'sgd':
         optimizer = SGD(param_groups,
                         lr=args.lr,
